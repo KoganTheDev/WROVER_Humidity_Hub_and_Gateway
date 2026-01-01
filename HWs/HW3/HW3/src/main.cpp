@@ -141,25 +141,27 @@ void setup()
  */
 void loop()
 {
-    // --- Process OFF Event ---
+    // --- Process OFF Event (Very Long Press > 4s) ---
     if (actionStop)
     {
         actionStop = false; 
-        actionStart = false; // Prevent accidental start after stop
-        Serial.print("OFF: Press duration ");
-        Serial.print(lastDuration);
-        Serial.println("ms. System Shutdown.");
+        actionStart = false; 
+        Serial.print("OFF: Duration ");
+        Serial.print(lastDuration); // Added milliseconds units
+        Serial.println(" ms. System Shutdown.");
         stopTimer();
     }
 
-    // --- Process SHORT PRESS Event ---
+    // --- Process SHORT PRESS Event (< 1.5s) ---
     if (actionShort)
     {
         actionShort = false;
-        Serial.print("SHORT PRESS: Counter = ");
+        Serial.print("SHORT PRESS: Duration ");
+        Serial.print(lastDuration); // NEW: Prints exact duration
+        Serial.print(" ms. Counter = ");
         Serial.println(PressCounter);
         
-        digitalWrite(ledPin, HIGH); // Start 200ms feedback
+        digitalWrite(ledPin, HIGH); 
         feedbackLedOn = true;
         lastFlashStart = millis();
     }
@@ -171,14 +173,16 @@ void loop()
         feedbackLedOn = false;
     }
 
-    // --- Process START/CONFIRM Event ---
+    // --- Process START/CONFIRM Event (1.5s - 4s) ---
     if (actionStart)
     {
         actionStart = false;
 
         if (!Blink && PressCounter > 0)
         {      
-            Serial.print("CONFIRMED: Blinking every ");
+            Serial.print("CONFIRMED: Duration ");
+            Serial.print(lastDuration); // NEW: Prints exact duration
+            Serial.print(" ms. Blinking every ");
             Serial.print(PressCounter);
             Serial.println(" seconds.");
             Blink = true;
@@ -186,7 +190,9 @@ void loop()
         }
         else if (!Blink && PressCounter == 0)
         {
-            Serial.println("ERROR: No counts recorded.");
+            Serial.print("ERROR: Long press detected (");
+            Serial.print(lastDuration);
+            Serial.println(" ms), but no counts recorded.");
         }
     }
 }
