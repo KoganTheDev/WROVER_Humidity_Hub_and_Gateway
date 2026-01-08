@@ -1,34 +1,40 @@
 /**
  * @file WROVER_Web_Hub.ino
- * @brief ESP32 WROVER Web Server with Professional Serial Debugging.
+ * @brief ESP32 Network Gateway & Web Dashboard for Humidity Monitoring.
+ * This file handles:
+ * 1. WiFi connectivity and Web Server hosting.
+ * 2. UART communication with an Arduino Nano (Hardware Serial 2).
+ * 3. Parsing logic for the [DHT11] debug string format.
  */
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include "esp_log.h"
 
 // --- HARDWARE & NETWORK CONSTANTS ---
-const uint16_t MONITOR_BAUD  = 9600; // Increased for cleaner debug output
-const uint16_t NANO_BAUD     = 9600;
-const uint8_t  PIN_NANO_RX   = 27;
-const uint8_t  PIN_NANO_TX   = 14;
+const uint16_t MONITOR_BAUD = 9600;  // Speed for USB Serial Monitor
+const uint16_t NANO_BAUD = 9600;     // Speed for Nano-ESP32 Interconnect
+const uint8_t PIN_NANO_RX = 27;      // ESP32 RX Pin (Connect to Nano TX)
+const uint8_t PIN_NANO_TX = 14;      // ESP32 TX Pin (Connect to Nano RX)
+const uint8_t HTTP_SERVER_PORT = 80; // Defualt port for http
 
-const char* WIFI_SSID        = "SSID";
-const char* WIFI_PASS        = "Password";
+const char *WIFI_SSID = "SSID";
+const char *WIFI_PASS = "PASSWORD";
 
 // --- GLOBAL STATE ---
-WebServer server(80);
+WebServer server(HTTP_SERVER_PORT);
 
 float currentHum = 0.0;
-float minHum     = 100.0;
-float maxHum     = 0.0;
+float minHum = 100.0;
+float maxHum = 0.0;
 
-// --- HTML INTERFACE (No changes to your working UI) ---
+// --- HTML INTERFACE ---
 const char INDEX_HTML[] PROGMEM = R"=====(
 <!DOCTYPE html>
 <html>
 <head>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>WROVER Smart Monitor</title>
+    <title>Humidity Hub</title>
     <style>
         :root { --bg: #f0f2f5; --card: #ffffff; --text: #333; --cyan: #00d2d3; --teal: #0097a7; --blue: #2e86de; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); text-align: center; padding: 20px; }
@@ -97,92 +103,112 @@ const char INDEX_HTML[] PROGMEM = R"=====(
 )=====";
 
 // --- HANDLERS ---
-void handleRoot() { 
-    Serial.println("[HTTP] Client requested Index Page");
-    server.send(200, "text/html", INDEX_HTML); 
-}
 
-void handleGetData() {
+/** Serves the main HTML page */
+void handleRoot() { server.send(200, "text/html", INDEX_HTML); }
+
+/** Provides current humidity stats in JSON format for the web dashboard */
+void handleGetData()
+{
     String json = "{\"curr\":" + String(currentHum, 1) + ",\"min\":" + String(minHum, 1) + ",\"max\":" + String(maxHum, 1) + "}";
     server.send(200, "application/json", json);
 }
 
-void handleMsg() {
-    String val = server.arg("val");
-    Serial.printf("[HTTP] Sending message to Nano: %s\n", val.c_str());
-    Serial2.println("M:" + val); 
+/** Receives a message string from the web and forwards it to the Nano via UART */
+void handleMsg()
+{
+    String message = server.arg("val");
+    
+    // Log to Serial Monitor (USB)
+    Serial.print("[WEB] New Message for LCD: ");
+    Serial.println(message);
+    
+    // Send to Nano (UART)
+    Serial2.println("M:" + message);
+    
     server.send(200, "text/plain", "OK");
 }
 
-void handleReset() {
-    Serial.println("[HTTP] Resetting Min/Max Command Received");
+/** Sends a reset command to the Nano */
+void handleReset()
+{
+    // Log to Serial Monitor (USB)
+    Serial.println("[WEB] Reset Command Received -> Sending to Nano...");
+    
+    // Send to Nano (UART)
     Serial2.println("R:1");
+    
     server.send(200, "text/plain", "OK");
 }
 
 void setup() {
     Serial.begin(MONITOR_BAUD);
-    Serial2.begin(NANO_BAUD, SERIAL_8N1, PIN_NANO_RX, PIN_NANO_TX); 
-    delay(2000); // Give power a moment to stabilize
+    Serial2.begin(NANO_BAUD, SERIAL_8N1, PIN_NANO_RX, PIN_NANO_TX);
+    delay(2000); 
 
-    Serial.println("\n\n[SYSTEM] Resetting WiFi Flash Settings...");
+    // --- 1. SILENCE SYSTEM LOGS ---
+    esp_log_level_set("wifi", ESP_LOG_NONE); 
     
-    // Explicitly clean up WiFi state
-    WiFi.disconnect(true); // Delete saved credentials
-    WiFi.mode(WIFI_STA);   // Set station mode explicitly
-    delay(100);
+    Serial.println("\n[SYSTEM] Initializing WiFi...");
 
-    Serial.printf("[WiFi] Connecting to: %s ", WIFI_SSID);
+    // --- 2. THE "CLEAN" CONNECTION SEQUENCE ---
+    WiFi.persistent(false);
+    WiFi.disconnect(true);  
+    WiFi.mode(WIFI_STA);
+    delay(500);
+
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     
-    int attempt = 0;
-    while (WiFi.status() != WL_CONNECTED && attempt < 30) {
+    int attemptCounter = 0;
+    while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
-        attempt++;
-        
-        // If it hangs, try to re-trigger
-        if(attempt == 15) {
-            Serial.println("\n[WiFi] Retrying handshake...");
+        attemptCounter++;
+
+        if (attemptCounter >= 20) {
+            Serial.println("\n[WiFi] Connection taking too long, retrying...");
             WiFi.begin(WIFI_SSID, WIFI_PASS);
+            attemptCounter = 0;
         }
     }
 
-    if(WiFi.status() == WL_CONNECTED) {
-        Serial.println("\n[WiFi] Connected!");
-        Serial.printf("[WiFi] IP Address:  %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.printf("\n[ERROR] WiFi Failed. Status: %d\n", WiFi.status());
-    }
+    Serial.println("\n[WiFi] Connected successfully!");
+    Serial.print("[WiFi] IP Address: ");
+    Serial.println(WiFi.localIP());
 
-    // Configure Server Handlers
+    // Register API endpoints & Start Server
     server.on("/", handleRoot);
     server.on("/api/data", handleGetData);
     server.on("/api/msg", handleMsg);
     server.on("/api/reset", handleReset);
-    
     server.begin();
-    Serial.println("[HTTP] Server Ready.");
 }
 
-void loop() {
-    server.handleClient();
+void loop()
+{
+    server.handleClient(); // Handle incoming web requests
 
-    // Process UART Traffic
-    if (Serial2.available()) {
+    // Check for incoming data from the Arduino Nano
+    if (Serial2.available())
+    {
         String incoming = Serial2.readStringUntil('\n');
         incoming.trim();
-        
-        if (incoming.startsWith("H:")) {
-            int c1 = incoming.indexOf(',');
-            int c2 = incoming.indexOf(',', c1 + 1);
-            if (c1 != -1 && c2 != -1) {
-                currentHum = incoming.substring(2, c1).toFloat();
-                minHum = incoming.substring(c1 + 1, c2).toFloat();
-                maxHum = incoming.substring(c2 + 1).toFloat();
-                
-                // Keep the serial quiet but confirm data flow
-                Serial.printf("[UART] Update: %.1f%% (Min: %.1f Max: %.1f)\n", currentHum, minHum, maxHum);
+
+        // PARSING LOGIC:
+        // Expected format: "[DHT11] Current = 45.0, Min = 30.0, Max = 60.0,"
+        if (incoming.startsWith("[DHT11]"))
+        {
+            int curIdx = incoming.indexOf("Current = ");
+            int minIdx = incoming.indexOf("Min = ");
+            int maxIdx = incoming.indexOf("Max = ");
+
+            if (curIdx != -1 && minIdx != -1 && maxIdx != -1)
+            {
+                currentHum = incoming.substring(curIdx + 10, incoming.indexOf(",", curIdx)).toFloat();
+                minHum = incoming.substring(minIdx + 6, incoming.indexOf(",", minIdx)).toFloat();
+                maxHum = incoming.substring(maxIdx + 6, incoming.indexOf(",", maxIdx)).toFloat();
+
+                Serial.printf("[DHT11->UART] Current = %.1f, Min:%.1f, Max = %.1f,\n", currentHum, minHum, maxHum);
             }
         }
     }

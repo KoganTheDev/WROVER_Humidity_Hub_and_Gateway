@@ -1,6 +1,7 @@
 /**
  * @file Nano_Humidity_Controller.ino
- * @brief Nano-side controller compatible with ESP32 WROVER Web Hub.
+ * @brief Humidity Controller Node. Handles sensor reading, local display, 
+ * and responds to UART commands from the ESP32 Web Gateway.
  */
 
 #include <Wire.h>
@@ -26,6 +27,9 @@ float minHum     = 100.0;
 float maxHum     = 0.0;
 unsigned long lastSensorReadTime = 0;
 
+/**
+ * @brief Initialization: Sets up peripherals and displays boot splash.
+ */
 void setup() {
   Serial.begin(BAUD_RATE);
   dht.begin();
@@ -45,18 +49,22 @@ void setup() {
 void loop() {
   unsigned long currentTime = millis();
 
-  // 1. Task: Read Sensor & Transmit to ESP32
-  if (currentTime - lastSensorReadTime >= SENSOR_INTERVAL) {
+  // --- TASK 1: SENSOR ACQUISITION & OUTBOUND TELEMETRY ---
+  // Uses non-blocking millis() to ensure the Serial port stays responsive
+  if (currentTime - lastSensorReadTime >= SENSOR_INTERVAL)
+  {
     float h = dht.readHumidity();
 
-    if (!isnan(h)) {
+    // Only process if the reading is valid
+    if (!isnan(h))
+    {
       currentHum = h;
       
-      // Update Min/Max tracking
+      // Track lifetime highs and lows
       if (currentHum < minHum) minHum = currentHum;
       if (currentHum > maxHum) maxHum = currentHum;
 
-      // Update Local LCD Display
+      // Update Local LCD Display (Row 0: Current, Row 1: Stats)
       lcd.setCursor(0, 0);
       lcd.print("Humidity: "); 
       lcd.print(currentHum, 1);
@@ -66,45 +74,59 @@ void loop() {
       lcd.print("L:"); lcd.print(minHum, 0); 
       lcd.print("%  H:"); lcd.print(maxHum, 0); lcd.print("%  ");
 
-      // TRANSMIT TO ESP32: Format "H:current,min,max"
-      // This is what the ESP32 logic is looking for
-      Serial.print("H:");
+      // TRANSMIT: Sent to ESP32 for parsing. 
+      // Prefix [DHT11] is the trigger for the ESP32's parsing logic.
+      Serial.print("[DHT11] ");
+      Serial.print("Current = ");
       Serial.print(currentHum, 1);
-      Serial.print(",");
+      Serial.print(", Min = ");
       Serial.print(minHum, 1);
-      Serial.print(",");
-      Serial.println(maxHum, 1);
+      Serial.print(", Max = ");
+      Serial.print(maxHum, 1);
+      Serial.println(",");
     }
     lastSensorReadTime = currentTime;
   }
 
-  // 2. Task: Handle Commands from ESP32
-  if (Serial.available() > 0) {
+  // --- TASK 2: COMMAND INBOUND PROCESSING ---
+  // Listens for commands coming from the ESP32 Web Interface
+  if (Serial.available() > 0) 
+  {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
 
-    // Command: RESET
-    if (cmd == "R:1") {
+    // PROTOCOL: R:1 -> Reset min/max history
+    if (cmd == "R:1")
+    {
+      Serial.println("[LOG] Reset command received. Clearing history...");
+      
       minHum = currentHum;
       maxHum = currentHum;
+      
       lcd.clear();
       lcd.setCursor(0,0);
       lcd.print(">> RESETTING <<");
       lcd.setCursor(0,1);
       lcd.print(" MIN/MAX CLEARED");
-      delay(2000);
+      delay(2000); // Temporary block to show status on LCD
       lcd.clear();
     } 
-    // Command: MESSAGE FROM WEB
-    else if (cmd.startsWith("M:")) {
+    // PROTOCOL: M:<text> -> Remote message display
+    else if (cmd.startsWith("M:"))
+    {
       String msg = cmd.substring(2);
+      
+      Serial.print("[LOG] Web Message received: ");
+      Serial.println(msg);
+      
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("WEB MESSAGE:");
       lcd.setCursor(0, 1);
-      // Clean up and display the message
+      
+      // Truncate to 16 characters to fit standard LCD width
       lcd.print(msg.substring(0, 16)); 
-      delay(4000); // Show message for 4 seconds
+      delay(4000); // Display message for 4 seconds before returning to sensor data
       lcd.clear();
     }
   }
