@@ -23,6 +23,12 @@ This project implements a robust **UART-to-Web Gateway**. The system is split in
 
 ---
 
+## 🏛️ High Level Architecture
+
+![high_level_architecture](/docs/images/high_level_architecture.png)
+
+---
+
 ## 📚 Table of Contents
 
 * [🚀 How to Deploy](https://www.google.com/search?q=%23-how-to-deploy)
