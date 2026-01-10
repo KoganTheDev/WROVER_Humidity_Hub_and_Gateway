@@ -1,6 +1,16 @@
 # ☔ IoT Humidity Gateway & Hub
 The **IoT Humidity Gateway & Hub** is a dual-processor embedded system that bridges local environmental sensing with a modern web interface. It utilizes an Arduino Nano for high-precision sensor timing and an ESP32 WROVER to host an asynchronous web dashboard, providing real-time humidity tracking and remote hardware control.
 
+<!-- Badges -->
+![ESP32](https://img.shields.io/badge/ESP32-WROVER-blue?logo=espressif)
+![Arduino](https://img.shields.io/badge/Arduino-Nano-00979D?logo=arduino)
+![IoT](https://img.shields.io/badge/IoT-Embedded-orange)
+![C++](https://img.shields.io/badge/C%2B%2B-Embedded-blue?logo=c%2B%2B)
+![HTML5](https://img.shields.io/badge/HTML5-Dashboard-E34F26?logo=html5)
+![CSS3](https://img.shields.io/badge/CSS3-Responsive-1572B6?logo=css3)
+![JavaScript](https://img.shields.io/badge/JavaScript-ES6-F7DF1E?logo=javascript&logoColor=black)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 ---
 
 ## 🧠 Overview
